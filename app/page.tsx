@@ -27,7 +27,7 @@ export default function Home() {
           <a href="#entries">Entries</a>
           <a href="#timeline">Timeline</a>
           <a href="#about">About</a>
-        </header>
+        </nav>
       </header>
 
       <section id="entries">

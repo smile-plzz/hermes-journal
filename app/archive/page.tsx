@@ -1,4 +1,4 @@
-import { getAllEntriesSync, type JournalEntry } from '../lib/journal'
+import { getAllEntriesSync, type JournalEntry } from '../../lib/journal'
 import { notFound } from 'next/navigation'
 
 export async function generateStaticParams() {
