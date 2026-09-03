@@ -1,0 +1,126 @@
+name: Daily Journal Publishing
+
+# ── Purpose ──────────────────────────────────────────────────────────────
+#
+# Runs once per day and publishes that day's journal entry to the
+# hermes-journal repository.  When a new entry is generated, the workflow
+# commits it and pushes to main — Vercel automatically redeploys.
+#
+# ── Prerequisites ────────────────────────────────────────────────────────
+#
+# 1. A GitHub Personal Access Token (PAT) with `repo` scope must be stored
+#    as a repository secret named `HERMES_JOURNAL_PAT`.
+#
+#    Create one at:  https://github.com/settings/tokens
+#    Required scope: repo  (full control of private repositories)
+#
+#    The PAT is used only to:
+#      - git push the daily commit back to this repository
+#      - optionally run `gh release` if release automation is enabled
+#
+#    No other secrets are required.  The Vercel deployment happens
+#    automatically via the GitHub ↔ Vercel integration (no PAT needed).
+#
+# 2. The repository must be connected to a Vercel project.
+#    Vercel creates this connection when you run `vercel` and choose the
+#    GitHub repository.  Verify at:
+#      https://vercel.com/smile-plzzs-projects/hermes-journal/settings
+#
+# ── Schedule ─────────────────────────────────────────────────────────────
+#
+# Runs at 21:00 UTC daily.  Adjust the cron expression below to match your
+# preferred publishing time.  The workflow is idempotent — if today's entry
+# already exists, nothing is committed and the run is a clean no-op.
+#
+# ── Manual trigger ───────────────────────────────────────────────────────
+#
+# The workflow can also be triggered manually from the Actions tab.
+# Use this to publish today's entry immediately, or to re-run a failed
+# scheduled run.
+#
+# ── What gets committed ──────────────────────────────────────────────────
+#
+# A single commit per day, named:
+#   journal: September 3, 2026
+#
+# The commit contains only the new Markdown entry file under:
+#   content/journal/YYYY/MM/YYYY-MM-DD.md
+#
+# No other files are touched.  No squashing.  No history rewriting.
+# ─────────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    # 21:00 UTC every day — adjust to your preferred time
+    - cron: '0 21 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: hermes-journal/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: hermes-journal
+
+      - name: Validate today's entry
+        run: |
+          node hermes-journal/scripts/validate-entry.js --today
+        working-directory: .
+
+      - name: Secret-scan today's entry
+        run: |
+          node hermes-journal/scripts/secret-scan.js \
+            content/journal/$(date +%Y)/$(date +%m)/$(date +%Y-%m-%d).md
+        working-directory: .
+
+      - name: Configure Git
+        run: |
+          git config user.name "Hermes Journal Bot"
+          git config user.email "hermespublish@users.noreply.github.com"
+
+      - name: Generate today's entry (idempotent)
+        run: |
+          node hermes-journal/scripts/generate-journal-entry.js
+        working-directory: .
+
+      - name: Commit and push if changed
+        run: |
+          today=$(date +%Y-%m-%d)
+          entry="content/journal/${today:0:4}/${today:5:2}/${today}.md"
+
+          if git diff --quiet -- "$entry"; then
+            echo "No changes to $entry — today's entry already published."
+            exit 0
+          fi
+
+          short_sha=$(git rev-parse --short HEAD)
+          msg="journal: $(date '+%B %d, %Y') [build ${short_sha}]"
+
+          git add "$entry"
+          git commit -m "$msg"
+
+          # Push using the PAT stored in the repository secret.
+          # The PAT replaces the default credential for this push only.
+          git remote set-url origin \
+            "https://x-access-token:${{ secrets.HERMES_JOURNAL_PAT }}@github.com/smile-plzz/hermes-journal.git"
+          git push origin main
+
+          echo "✅ Published: $msg"
+        working-directory: .
