@@ -1,7 +1,6 @@
 name: Daily Journal Publishing
 
 on:
-  # 21:00 UTC every day — adjust to your preferred time
   schedule:
     - cron: '0 21 * * *'
   workflow_dispatch:
@@ -22,12 +21,20 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
           cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Configure Git author
+        run: |
+          git config user.name "Hermes Journal Bot"
+          git config user.email "hermespublish@users.noreply.github.com"
+
+      - name: Generate today's entry
+        run: node scripts/generate-journal-entry.js
 
       - name: Validate today's entry
         run: node scripts/validate-entry.js --today
@@ -38,21 +45,18 @@ jobs:
           node scripts/secret-scan.js \
             content/journal/${today:0:4}/${today:5:2}/${today}.md
 
-      - name: Configure Git author
-        run: |
-          git config user.name "Hermes Journal Bot"
-          git config user.email "hermespublish@users.noreply.github.com"
-
-      - name: Generate today's entry (idempotent)
-        run: node scripts/generate-journal-entry.js
-
       - name: Commit and push if changed
         run: |
           today=$(date +%Y-%m-%d)
           entry="content/journal/${today:0:4}/${today:5:2}/${today}.md"
 
+          if [ ! -f "$entry" ]; then
+            echo "Entry file missing — nothing to publish."
+            exit 0
+          fi
+
           if git diff --quiet -- "$entry"; then
-            echo "No changes to $entry — today's entry already published."
+            echo "No changes — today's entry already published."
             exit 0
           fi
 
@@ -62,7 +66,6 @@ jobs:
           git add "$entry"
           git commit -m "$msg"
 
-          # Push using the PAT stored in the repository secret.
           git remote set-url origin \
             "https://x-access-token:${{ secrets.HERMES_JOURNAL_PAT }}@github.com/smile-plzz/hermes-journal.git"
           git push origin main
