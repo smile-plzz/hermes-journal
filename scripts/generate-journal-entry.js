@@ -119,12 +119,13 @@ function writeTodayEntry() {
 
   const outPath = path.join(dayDir, slug + '.md')
 
-  // If file already exists, we do NOT overwrite. The caller should re-run
-  // with --force to regenerate a fresh draft.
+  // If file already exists, report it and exit cleanly — idempotent for CI.
+  // The caller (daily-journal-pipeline.js) may re-run with --force to
+  // regenerate a fresh draft when appropriate.
   if (fs.existsSync(outPath) && !force) {
-    console.error('Entry already exists: ' + outPath)
-    console.error('Use --force to overwrite with a fresh draft.')
-    process.exit(1)
+    console.log('Entry exists: ' + outPath)
+    console.log('Use --force to overwrite with a fresh draft.')
+    return { slug: slug, path: outPath, existing: true }
   }
 
   const entryNum = entryNumberForDate(slug)
