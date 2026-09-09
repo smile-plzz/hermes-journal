@@ -55,7 +55,13 @@ jobs:
             exit 0
           fi
 
-          if git diff --quiet -- "$entry"; then
+          # `git diff` only sees tracked files — a newly generated entry on a
+          # fresh day is untracked and invisible to `git diff`.  Use
+          # `git status --porcelain` instead, which catches both modified and
+          # untracked files.
+          if git status --porcelain -- "$entry" | grep -q .; then
+            : # file is changed or new — proceed to commit
+          else
             echo "No changes — today's entry already published."
             exit 0
           fi
